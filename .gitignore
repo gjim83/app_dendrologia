@@ -1,0 +1,13 @@
+# Workspace related
+
+/tmp
+.vscode/**
+*~
+
+# App related
+
+# no queremos guardar esto en el repositorio
+# eventualmente deberían vivir en una BD o similar
+actas_xml/**
+actas_pdf/**
+actas_txt/**
