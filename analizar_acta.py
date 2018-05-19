@@ -24,7 +24,7 @@ DIPS = {
     2: {'nombres': 'Ivonne', 'apellidos': 'Acuña Cabrera'},
     3: {'nombres': 'Luis Antonio', 'apellidos': 'Aiza Campos'},
     4: {'nombres': 'Ignacio Alberto', 'apellidos': 'Alpízar Castro'},
-    5: {'nombres': 'Mileidy', 'apellidos': 'Alvarado Arias'},
+    5: {'nombres': 'Mileyde', 'apellidos': 'Alvarado Arias'},
     6: {'nombres': 'Carlos Luis', 'apellidos': 'Avendaño Calvo'},
     7: {'nombres': 'Marolin Raquel', 'apellidos': 'Azofeifa Trejos'},
     8: {'nombres': 'Carlos Ricardo', 'apellidos': 'Benavides Jiménez'},
@@ -86,18 +86,20 @@ IGNORAR_LINEA = [
     re.compile(r'ACTA ORDINARIA N'),
     re.compile(r'^[0-9]{1,2}$'),
     re.compile('^$'),
-    re.compile(r'(^[\sA-ZÁÉÍÓÚ°0-9\.\(\),º\-]+$)'),
+    re.compile(r'(^[\sA-ZÑÁÉÍÓÚ°0-9\.\(\),º\-]+$)'),
     re.compile(r'^\n$')
 ]
 
-HABLA_DIP = re.compile(r'Diputad. (?P<dip>[\w\s]*):')
+HABLA_DIP = re.compile(r'Diputad. (?P<dip>[\w\s\-]*):')
 HABLA_PRES = re.compile(r'President. (a\.? í\.?)?[\w\s]*:')
 
-NOMBRE_ASIST = '\w+(\s+\w+)?,\s+\w+(\s{1,2}\w+)?(\s\(cc \w+\))?'
+NOMBRE_ASIST = '\w+(\s+[\-\w]+)?,\s+\w+(\s{1,2}\w+)?(\s\(cc \w+\))?'
 RE_TABLA_ASISTENCIA = r'\s*(?P<dip1>{0})\s*(?P<dip2>{0})?'.format(NOMBRE_ASIST)
 LINEA_NOMBRES_DIP = re.compile(RE_TABLA_ASISTENCIA, re.I)
 
-NOMBRE_CC = re.compile(r'(?P<apellidos>[\w\s]+?), (?P<nombres>[\s\w]+?) (?P<nombre_cc>\(cc \w+?\))')
+NOMBRE_CC = re.compile(r'(?P<apellidos>[\w\s\-]+?), (?P<nombres>[\s\w]+?) (?P<nombre_cc>\(cc \w+?\))')
+
+LEVANTA_SESION = re.compile(r'se (levanta|tiene por terminada) la sesi[oó]n')
 
 # ----------
 
@@ -118,43 +120,38 @@ def sacar_indice(nombre):
     :returns i: "índice" (realmente es el 'key') de ``DIPS``
     :rtype: int
     """
-    apd, nmb = nombre.split(', ')
+    if ',' in nombre:
+        apd, nmb = nombre.split(', ')
+        nombre = ' '.join((nmb, apd))
+
     for i, info in DIPS.items():
-        match_nmb = nmb == info['nombres']
-        match_apd = apd == info['apellidos']
-        if match_apd and match_nmb:
+        if nombre == ' '.join((info['nombres'], info['apellidos'])):
             # Si corresponde exactamente, devolver el índice-llave...
             return i
 
-    # Si no, se da otra pasada haciendo un análisis más detallado. Se espera que las posibilidades
-    # sean que: 1. los apellidos correspondan, pero el nombre es un poco diferente, 2. los
-    # apellidos son un poco diferentes, 3. Tiene una nota de "Conocido como" (cc).
-    # Para 1 y 2, determina que corresponden los nombres y/o apellidos cuando el coeficiente de
-    # similitud es mayor a 0.9
-    opciones = [nombre]
-    for i, info in DIPS.items():
-        match_apd = apd == info['apellidos']
-        match_apd_prob = difflib.SequenceMatcher(None, apd, info['apellidos']).ratio() > 0.9
-        if match_apd or match_apd_prob:
-            contiene_cc = NOMBRE_CC.search(nombre)
-            if contiene_cc:
-                # Ejemplo: "Monge Salas, Rony (cc Ronny)"
-                nmb_cc_info = contiene_cc.groupdict()
-                if nmb_cc_info['nombre_cc'] == info['nombres']:
-                    return i
-                opciones.append(nmb_cc_info['apellidos'] + ', ' + nmb_cc_info['nombres'])
-                opciones.append(nmb_cc_info['apellidos'] + ', ' + nmb_cc_info['nombre_cc'])
-            nombres = nmb.split()
-            for _nombre in nombres:
-                opciones.append(apd + ', ' + _nombre)
+    # Si no, se da otra pasada haciendo un análisis más detallado, usando la versión extendida de
+    # los nombres. Se calcula el máximo del coeficiente de similitud entre una iteración y el
+    # coeficiente máximo hasta esa. Si es mayor a 0.99 se considera que corresponde, si no, se
+    # completa la comparación para todos los nombres y se mantiene el coeficiente mayor encontrado.
+    coef_max = {'coef': 0}
+    brk = False
+    for i, nombres in nombres_extra.items():
+        for nmb in nombres:
+            coef = difflib.SequenceMatcher(None, nmb, nombre).ratio()
+            if coef > coef_max['coef']:
+                coef_max['i'] = i
+                coef_max['nmb'] = nmb
+                coef_max['coef'] = coef
+            if coef > 0.99:
+                brk = True
+                break
+        if brk:
+            break
 
-        nombre_completo = info['apellidos'] + ', ' + info['nombres']
-        if any([difflib.SequenceMatcher(None, nombre_completo, opc).ratio() > 0.9
-                for opc in opciones]):
-            print('nombre: {} - id: {} - por probabilidad, opciones: {}'.format(nombre, i,
-                                                                                opciones))
-            return i
-    raise ValueError('Ni idea quién es {}'.format(nombre))
+    msg = ('Nombre recibido: {} - Nombre correspondiente: {} - Índice: {} '
+           '- coeficiente: {}'.format(nombre, coef_max['nmb'], coef_max['i'], coef_max['coef']))
+    print(msg)
+    return coef_max['i']
 
 
 def asistencia(pag):
@@ -169,6 +166,9 @@ def asistencia(pag):
     :returns bitacora: información para reportar bitácora
     :rtype: dict, str
     """
+    titulo = 'Analizando asistencia (sólo imprime nombres sin correspondencia inmediata)'
+    print(titulo)
+    print('=' * len(titulo))
     presentes = []
     bitacora = []
     for linea in pag.splitlines():
@@ -190,7 +190,18 @@ def asistencia(pag):
         data[i] = {}
         data[i]['intervenciones'] = 0
         data[i]['palabras'] = 0
+    print('')
     return data, bitacora
+
+
+def finalizar_analisis(linea_1, linea_2):
+    """
+    Determina si debe finalizar el análisis. Encadena 2 líneas y busca si cumple la regex de las
+    frases que se usan para terminar una sesión ("se levanta la sesión" o "se da por terminada
+    la sesión").
+    """
+    l = linea_1 + ' ' + linea_2
+    return True if LEVANTA_SESION.search(l) else False
 
 
 def analizar(contenido):
@@ -212,7 +223,6 @@ def analizar(contenido):
     :returns data: estructura de datos con los contadores actualizados
     :rtype: dict
     """
-    levanta_sesion = 'se levanta la sesión'
     bitacora = []
 
     asistencia_tomada = False
@@ -224,6 +234,9 @@ def analizar(contenido):
         if not asistencia_tomada:
             if 'diputados presentes' in pag.lower():
                 data, _bitacora = asistencia(pag)
+                titulo = 'Analizando acta'
+                print(titulo)
+                print('='*len(titulo))
                 asistencia_tomada = True
                 bitacora.extend(_bitacora)
                 continue
@@ -239,11 +252,13 @@ def analizar(contenido):
                                   in enumerate(pag.splitlines())])
                 continue
             midiendo_intervenciones = True
-        for num_linea, linea in enumerate(pag.splitlines()):
+        pag_enum = [(n, l) for n, l in enumerate(pag.splitlines())]
+        for num_linea, linea in pag_enum:
             if terminar:
                 bitacora.append(('', linea))
                 continue
-            if levanta_sesion in linea:
+            linea_anterior = pag_enum[num_linea-1][1]
+            if finalizar_analisis(linea_anterior, linea):
                 terminar = True
                 bitacora.append(('{}:{}:Finaliza el análisis'.format(num_pag, num_linea), linea))
                 continue
@@ -251,22 +266,22 @@ def analizar(contenido):
                 bitacora.append(('{}:{}:ignorar línea'.format(num_pag, num_linea), linea))
                 continue
             if HABLA_PRES.search(linea):
-                habla_presidente = True
-            if HABLA_DIP.search(linea):
-                habla_presidente = False
+                habla_presi = True
+            habla_dip = HABLA_DIP.search(linea)
+            if habla_dip:
+                dip = habla_dip.groupdict()['dip']
+                habla_presi = False
                 se_quien_es = False
-                for i, info in DIPS.items():
-                    if info['apellidos'] in linea:
-                        data[i]['intervenciones'] += 1
-                        se_quien_es = True
-                        bitacora.append(('{}:{}:habla dip, id: {}, intervención # {}'
-                                         .format(num_pag, num_linea, i, data[i]['intervenciones']),
-                                                 linea))
-                        break
+                i = sacar_indice(dip)
+                data[i]['intervenciones'] += 1
+                se_quien_es = True
+                bitacora.append(('{}:{}:habla dip, id: {}, intervención # {}'
+                                 .format(num_pag, num_linea, i, data[i]['intervenciones']),
+                                         linea))
                 if not se_quien_es:
                     raise ValueError('¿Quién es {}?'.format(linea))
                 continue
-            if habla_presidente:
+            if habla_presi:
                 bitacora.append(('{}:{}:habla presidenta/e'.format(num_pag, num_linea), linea))
                 continue
             data[i]['palabras'] += len(linea.split())
@@ -282,10 +297,13 @@ def analizar(contenido):
 
 def leer_pdf(archivo):
     """Convierte un pdf a una serie de strings que contienen cada página."""
-    with open(archivo, 'rb') as f:
-        contenido = pdftotext.PDF(f)
-    return contenido
-
+    def _leer(arch):
+        with open(arch, 'rb') as f:
+            return pdftotext.PDF(f)
+    try:
+        return _leer(archivo)
+    except FileNotFoundError:
+        return _leer('pdf_originales/'+archivo)
 
 def obtener_cmd_db(arch, fecha):
     """
@@ -297,9 +315,9 @@ def obtener_cmd_db(arch, fecha):
     records = []
     for i, info in data.items():
         records.append(str((fecha, i, info['intervenciones'], info['palabras'])))
+    print('Total diputados/as presentes:', len(records), '\n')
     stmt = 'insert into {} (fecha, iddip, intervenciones, palabras) values '.format(db)
     stmt += ', '.join(records)
-    print('Total diputados/as presentes:', len(records), '\n')
     print(stmt+'\n')
     return bitacora
 
@@ -312,9 +330,42 @@ def escribir_bitacora(bitacora):
             f.write('{:45} | {}\n'.format(info[0], info[1]))
 
 
+def extender_nombres():
+    """
+    Genera una lista con todas las opciones de nombres extraídos de ``DIPS``. Para los nombres de
+    la forma "Apellido1 Apellido2, Nombre1 Nombre2" le agrega las siguientes opciones::
+
+        Apellido1 Apellido2, Nombre1
+        Apellido1 Apellido2, Nombre2
+        Apellido1, Nombre1 Nombre2
+        Apellido1, Nombre1
+        Apellido1, Nombre2
+
+    """
+    global nombres_extra
+    nombres_extra = {}
+
+    for i, info in DIPS.items():
+        apds = [info['apellidos']]
+        nmbs = [info['nombres']]
+
+        if ' ' in nmbs[0]:
+            primer_nm, segundo_nm = nmbs[0].split()
+            nmbs.append(primer_nm)
+            nmbs.append(segundo_nm)
+        if ' ' in apds[0]:
+            apds.append(apds[0].split()[0])
+
+        for apd in apds:
+            for nmb in nmbs:
+                nombres_extra.setdefault(i, []).append(' '.join((nmb, apd)))
+
+
 if __name__ == '__main__':
     archivo = sys.argv[1]
-    fecha = sys.argv[2]
+    fecha = archivo.split('/')[-1].split('.')[0]
+
+    extender_nombres()
 
     bitacora = obtener_cmd_db(archivo, fecha)
     escribir_bitacora(bitacora)
