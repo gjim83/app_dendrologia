@@ -199,6 +199,14 @@ def finalizar_analisis(linea_1, linea_2):
     Determina si debe finalizar el análisis. Encadena 2 líneas y busca si cumple la regex de las
     frases que se usan para terminar una sesión ("se levanta la sesión" o "se da por terminada
     la sesión").
+
+    Se usan dos líneas porque en algunos casos, la frase está dividida en 2 líneas.
+
+    :param str linea_1: línea del acta
+    :param str linea_2: línea siguiente a ``linea_1``
+
+    :return: se encontró la frase o no
+    :rtype: bool
     """
     l = linea_1 + ' ' + linea_2
     return True if LEVANTA_SESION.search(l) else False
@@ -252,6 +260,8 @@ def analizar(contenido):
                                   in enumerate(pag.splitlines())])
                 continue
             midiendo_intervenciones = True
+        # No usamos el enumerate directamente en el for porque hace falta tener acceso a la
+        # línea anterior para determinar si se debe detener el análisis
         pag_enum = [(n, l) for n, l in enumerate(pag.splitlines())]
         for num_linea, linea in pag_enum:
             if terminar:
@@ -289,8 +299,8 @@ def analizar(contenido):
                             .format(num_pag, num_linea, i, data[i]['palabras']), linea))
 
     if not terminar:
-        raise ValueError('No se encontró el final del acta, frase esperada: '
-                         '"{}"'.format(levanta_sesion))
+        raise ValueError('No se encontró el final del acta, regex esperada: '
+                         '"{}"'.format(LEVANTA_SESION.pattern))
 
     return data, bitacora
 
@@ -341,6 +351,7 @@ def extender_nombres():
         Apellido1, Nombre1
         Apellido1, Nombre2
 
+    No tiene un return explícito, si no que el diccionario ``nombres_extra`` se hace global.
     """
     global nombres_extra
     nombres_extra = {}
