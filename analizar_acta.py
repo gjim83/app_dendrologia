@@ -140,7 +140,7 @@ def sacar_indice(nombre):
             coef = difflib.SequenceMatcher(None, nmb, nombre).ratio()
             if coef > coef_max['coef']:
                 coef_max['i'] = i
-                coef_max['nmb'] = nmb
+                coef_max['nmb'] = nombres_extra[i][0]
                 coef_max['coef'] = coef
             if coef > 0.99:
                 brk = True
