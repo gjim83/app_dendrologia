@@ -99,7 +99,7 @@ LINEA_NOMBRES_DIP = re.compile(RE_TABLA_ASISTENCIA, re.I)
 
 NOMBRE_CC = re.compile(r'(?P<apellidos>[\w\s\-]+?), (?P<nombres>[\s\w]+?) (?P<nombre_cc>\(cc \w+?\))')
 
-LEVANTA_SESION = re.compile(r'se (levanta|tiene por terminada) la sesi[oó]n')
+LEVANTA_SESION = re.compile(r'(se)? (levantar?|tiene por terminada) la sesi[oó]n')
 
 # ----------
 
