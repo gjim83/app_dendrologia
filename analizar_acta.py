@@ -93,7 +93,7 @@ IGNORAR_LINEA = [
 HABLA_DIP = re.compile(r'Diputad. (?P<dip>[\w\s\-]*):')
 HABLA_PRES = re.compile(r'President. (a\.? í\.?)?[\w\s]*:')
 
-NOMBRE_ASIST = '\w+(\s+[\-\w]+)?,\s+\w+(\s{1,2}\w+)?(\s\(cc \w+\))?'
+NOMBRE_ASIST = r'\w+(\s+[\-\w]+)?,\s+\w+(\s{1,2}\w+)?(\s\(cc \w+\))?'
 RE_TABLA_ASISTENCIA = r'\s*(?P<dip1>{0})\s*(?P<dip2>{0})?'.format(NOMBRE_ASIST)
 LINEA_NOMBRES_DIP = re.compile(RE_TABLA_ASISTENCIA, re.I)
 
